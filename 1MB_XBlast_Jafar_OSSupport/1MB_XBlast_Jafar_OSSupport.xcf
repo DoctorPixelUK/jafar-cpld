@@ -6,7 +6,7 @@
 		<Comm>JTAG</Comm>
 		<Device>
 			<Pos>1</Pos>
-			<Ref>Lattice LC4032V-10T44I</Ref>
+			<Ref>Lattice LC4032V</Ref>
 			<Vendor>Lattice</Vendor>
 			<Family>ispMACH4000</Family>
 			<Name>LC4032V</Name>
@@ -20,8 +20,8 @@
 				<BScanVal>0</BScanVal>
 			</Bypass>
 			<File>C:\Development\Git Repos\jafar-cpld\1MB_XBlast_Jafar_OSSupport\1mb_xblast_jafar_ossupport.jed</File>
-			<FileTime>08/03/25 22:22:40</FileTime>
-			<JedecChecksum>0xCB28</JedecChecksum>
+			<FileTime>08/04/25 19:56:34</FileTime>
+			<JedecChecksum>0xCC2A</JedecChecksum>
 			<Operation>Erase,Program,Verify</Operation>
 			<Option>
 				<SVFVendor>JTAG STANDARD</SVFVendor>
