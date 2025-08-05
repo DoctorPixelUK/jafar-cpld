@@ -170,7 +170,7 @@ begin
                             s_lpc_fsm_state <= LPC_FSM_GET_ADDR;
                             s_fsm_counter <= c_FSM_COUNT_RESET;    -- Reset counter for address decode.
                             s_io_cyc <= false;
-                        elseif pinout4_xbox_lad(3 downto 2) = c_CYC_IO_PREFIX then -- I/O read or write
+                        elsif pinout4_xbox_lad(3 downto 2) = c_CYC_IO_PREFIX then -- I/O read or write
                             s_lad_dir <= pinout4_xbox_lad(1);
                             s_lpc_fsm_state <= LPC_FSM_GET_ADDR;
                             s_fsm_counter <= c_FSM_ADDR_SEQ_NIBBLE4;    -- Skip to 5th nibble for IO address.
