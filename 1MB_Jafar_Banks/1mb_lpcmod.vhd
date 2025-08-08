@@ -70,6 +70,8 @@ architecture arch_lpcmod of entity_lpcmod is
     constant c_LAD_IOREG_PATTERN2: std_Logic_vector := "0111";
     constant c_LAD_IOREG_PATTERN3: std_Logic_vector := "000";
     constant c_LAD_IOREG_PATTERN4_CTRL: std_Logic_vector := "1111";
+
+    constant c_LAD_SYNC_PATTERN: std_Logic_vector := "0000";
     
     constant c_DEV_ID_LOW_NIBBLE: std_logic_vector := "0010";  -- Xblast Jafar (the '2' in 0x12)
     constant c_DEV_ID_HIGH_NIBBLE: std_logic_vector := "0001"; -- XBlast Jafar (the '1' in 0x12)
@@ -83,16 +85,17 @@ architecture arch_lpcmod of entity_lpcmod is
     constant c_FSM_ADDR_SEQ_NIBBLE4: integer := 4;
     constant c_FSM_ADDR_SEQ_NIBBLE5: integer := 5;
     constant c_FSM_ADDR_SEQ_NIBBLE6: integer := 6;
-    constant c_FSM_ADDR_SEQ_NIBBLE7: integer := 7;
+    constant c_FSM_ADDR_SEQ_NIBBLE7: integer := 7;    
+    constant c_FSM_ADDR_SEQ_MAX_COUNT: integer := c_FSM_ADDR_SEQ_NIBBLE7;
+    constant c_FSM_DATA_SEQ_MAX_COUNT: integer := c_FSM_ADDR_SEQ_NIBBLE6;
     
     constant c_FSM_DATA_SEQ_TAR2_READ: integer := 1;
     constant c_FSM_DATA_SEQ_TAR1_WRITE: integer := 3;
 
     constant c_FSM_DATA_SEQ_DATA1_READ: integer := 3;
     constant c_FSM_DATA_SEQ_DATA2_READ: integer := 4;
-    
-    constant c_FSM_ADDR_SEQ_MAX_COUNT: integer := c_FSM_ADDR_SEQ_NIBBLE7;
-    constant c_FSM_DATA_SEQ_MAX_COUNT: integer := c_FSM_ADDR_SEQ_NIBBLE6;
+
+    constant c_FSM_DATA_SEQ_SYNC_READ : integer := 2;
 
 --***+ types +***
     -- Regroup the necessary 17 cycle for a single byte of data transfer (both in R/W).
@@ -112,8 +115,8 @@ architecture arch_lpcmod of entity_lpcmod is
     signal s_lad_dir        : std_logic;                    -- 0 for Flash to Xbox(LPC read)
     signal s_device_disable : std_logic;
     signal s_is_init        : boolean := false;             -- Explicitely defined for a reason.
-    signal s_io_cyc         : boolean;                      -- When LPC transcation is IO read or write
-    signal s_io_reg         : boolean;                      -- Single IO reg addr supporteed in this design
+    signal s_io_cyc         : boolean := false;             -- When LPC transcation is IO read or write
+    signal s_io_reg         : boolean := false;             -- Single IO reg addr supporteed in this design
 
 
 begin
@@ -170,6 +173,7 @@ begin
                             s_lpc_fsm_state <= LPC_FSM_GET_ADDR;
                             s_fsm_counter <= c_FSM_COUNT_RESET;    -- Reset counter for address decode.
                             s_io_cyc <= false;
+			    s_io_reg <= false;
                         elsif pinout4_xbox_lad(3 downto 2) = c_CYC_IO_PREFIX then -- I/O read or write
                             s_lad_dir <= pinout4_xbox_lad(1);
                             s_lpc_fsm_state <= LPC_FSM_GET_ADDR;
@@ -184,21 +188,26 @@ begin
                             when c_FSM_ADDR_SEQ_NIBBLE0 | c_FSM_ADDR_SEQ_NIBBLE1 =>                           -- 2 first nibbles of a memory cycle must be "0xF".
                                 if pinout4_xbox_lad /= c_LAD_ADDR_PATTERN1 then
                                     s_lpc_fsm_state <= LPC_FSM_WAIT_START; -- sit out any unsupported cycle until the next start.
+				    s_io_cyc <= false;                   -- Kick out of IO cycle state machine's branch
+				    s_io_reg <= false;
                                     -- Again, this section could be expand in the event a program would want to access something else than BIOS flash.
                                     -- Maybe follow along any unsupported lpc transactions for more robustness?
                                 end if; 
                             when c_FSM_ADDR_SEQ_NIBBLE4 =>
                                 if s_io_cyc = true and pinout4_xbox_lad /= c_LAD_IOREG_PATTERN1 then      -- IO cycle: first nibble must be "0xF"  
                                     s_io_cyc <= false;                   -- Kick out of IO cycle state machine's branch
+				    s_io_reg <= false;
                                 end if;
                             when c_FSM_ADDR_SEQ_NIBBLE5 =>
                                 if s_io_cyc = true and pinout4_xbox_lad /= c_LAD_IOREG_PATTERN2 then      -- IO cycle: Second nibble must be "0x7"
                                     s_io_cyc <= false;                   -- Kick out of IO cycle state machine's branch
+				    s_io_reg <= false;
                                 end if;
                             when c_FSM_ADDR_SEQ_NIBBLE6 =>
                                 if s_io_cyc = true and pinout4_xbox_lad(3 downto 1) /= c_LAD_IOREG_PATTERN3 then     -- IO cycle: third nibble must be "0001". "0000" is also fine.   
                                                                                                                     -- LSB sets if cycle is for modchip control or other(LCD,etc.).
                                     s_io_cyc <= false;                   -- Kick out of IO cycle state machine's branch
+				    s_io_reg <= false;
                                 end if;
                             when c_FSM_ADDR_SEQ_NIBBLE7 =>
                                 s_fsm_counter <= c_FSM_COUNT_RESET;    -- Need to reset counter for LPC_FSM_DATA sequence.
@@ -229,8 +238,10 @@ begin
         if falling_edge(pin_xbox_lclk) then
             if s_lpc_fsm_state = LPC_FSM_DATA and ((s_lad_dir = c_CYC_DIRECTION_READ and s_fsm_counter >= c_FSM_DATA_SEQ_TAR2_READ) or (s_lad_dir = c_CYC_DIRECTION_WRITE and s_fsm_counter >= c_FSM_DATA_SEQ_TAR1_WRITE)) and s_fsm_counter <= c_FSM_DATA_SEQ_MAX_COUNT then   -- Sequences that reverse data flow. From LPC Flash to Xbox
                 pinout4_flash_lad <= c_LAD_INPUT_PATTERN;       -- Flash chips is leading the show.
-                if s_io_cyc = true and s_io_reg = true and s_lad_dir = c_CYC_DIRECTION_READ then
-                    if s_fsm_counter = c_FSM_DATA_SEQ_DATA1_READ then
+                if s_io_cyc = true and s_lad_dir = c_CYC_DIRECTION_READ then
+                    if s_fsm_counter = c_FSM_DATA_SEQ_SYNC_READ then
+                        pinout4_xbox_lad <= c_LAD_SYNC_PATTERN;
+		    elsif s_fsm_counter = c_FSM_DATA_SEQ_DATA1_READ then
                         pinout4_xbox_lad <= c_DEV_ID_LOW_NIBBLE;
                     elsif s_fsm_counter = c_FSM_DATA_SEQ_DATA2_READ then
                         pinout4_xbox_lad <= c_DEV_ID_HIGH_NIBBLE;
